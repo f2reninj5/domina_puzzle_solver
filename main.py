@@ -1,4 +1,6 @@
 from typing import TextIO, Any
+import networkx as nx
+from matplotlib import pyplot as plt
 
 
 class Position:
@@ -76,15 +78,19 @@ class Puzzle:
     def __init__(self, path: str) -> None:
         file = open(path, "r")
         self.puzzle_map, self.boxes, self.targets = self.parse_file(file)
+        self.initial_boxes = self.boxes.copy()
         self.width = len(self.puzzle_map[0])
         self.height = len(self.puzzle_map)
+        possible_states = self.get_possible_states()
+        self.states = {self.boxes: possible_states}
+        self.state_queue = list(self.get_possible_states())
 
     def repr_state(self, boxes: frozenset[Box]) -> str:
         puzzle_map = [[" " if i else "#" for i in row] for row in self.puzzle_map]
-        for box in boxes:
-            puzzle_map[box.x][box.y] = "O"
         for target in self.targets:
             puzzle_map[target.x][target.y] = "X"
+        for box in boxes:
+            puzzle_map[box.x][box.y] = "O"
         return "\n".join("".join(row) for row in puzzle_map)
 
     def __repr__(self) -> str:
@@ -97,7 +103,8 @@ class Puzzle:
                 0 <= move.to.y < self.height,  # within bounds y
                 move.to not in self.boxes,  # no box collision
                 self.puzzle_map[move.to],  # no wall collision
-                self.puzzle_map[move.opposite_to],  # has space to push from
+                self.puzzle_map[move.opposite_to],  # has space to push away from wall
+                move.opposite_to not in self.boxes,  # has space to push away from box
             )
         )
 
@@ -124,7 +131,44 @@ class Puzzle:
 
         return moves
 
+    def traverse_states(self) -> None:
+        while self.state_queue:
+            self.boxes = self.state_queue.pop()
+            possible_states = self.get_possible_states()
+
+            self.states[self.boxes] = possible_states
+
+            for state in possible_states:
+                if state not in self.state_queue and state not in self.states:
+                    self.state_queue.append(state)
+
 
 puzzle = Puzzle("puzzle.txt")
-for state in puzzle.get_possible_states():
+puzzle.traverse_states()
+print(puzzle.targets in puzzle.states)
+# print(puzzle.repr_state(puzzle.targets))
+
+g = nx.DiGraph(puzzle.states)
+path = nx.shortest_path(g, source=puzzle.initial_boxes, target=puzzle.targets)
+
+for state in path:
     print(puzzle.repr_state(state))
+
+# print(puzzle.repr_state(puzzle.targets))
+# for state in puzzle.states:
+#     print("")
+#     print(puzzle.repr_state(state))
+#     for next_state in puzzle.states[state]:
+#         print(puzzle.repr_state(next_state))
+
+
+pos = nx.spring_layout(g)
+
+plt.figure(figsize=(12, 12), dpi=300)
+
+nx.draw_networkx_nodes(g, pos, node_size=10)
+nx.draw_networkx_edges(g, pos, node_size=10, width=0.3, arrowsize=5, alpha=0.7)
+
+plt.axis("off")
+plt.tight_layout()
+plt.show()
